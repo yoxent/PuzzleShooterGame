@@ -2,8 +2,8 @@ using System;
 using UnityEngine;
 
 /// <summary>
-/// Pooled projectile. Moves in a direction at a set speed until it hits a collider.
-/// On hit, notifies the block (if any) for destruction and returns to the pool. No damage value — all hits destroy the block.
+/// Pooled projectile.
+/// Moves to target, reports hits, then returns itself to the pool.
 /// </summary>
 [RequireComponent(typeof(Rigidbody))]
 [RequireComponent(typeof(Collider))]
@@ -35,10 +35,10 @@ public class Projectile : MonoBehaviour
             col.isTrigger = true;
     }
 
-    /// <summary>Set the pool to return to when stopped. Called by ProjectilePool on Get.</summary>
+    /// <summary>Set the pool this projectile should return to.</summary>
     public void SetPool(ProjectilePool pool) => _pool = pool;
 
-    /// <summary>Launch in direction at speed. On hit, onHitBlock is invoked with the Block (if any), then onStopped, then this is returned to the pool.</summary>
+    /// <summary>Launch forward with a direction + speed (legacy mode).</summary>
     public void Launch(Vector3 direction, float speed, Action<Block> onHitBlock, Action onStopped)
     {
         _lerpMode = false;
@@ -49,7 +49,7 @@ public class Projectile : MonoBehaviour
         _launched = true;
     }
 
-    /// <summary>Launch and lerp from start to end over duration. On completion, onHitBlock(targetBlock) and onStopped are invoked, then returned to pool.</summary>
+    /// <summary>Launch by lerping from start to end over a fixed duration.</summary>
     public void LaunchToward(Vector3 from, Vector3 to, Block targetBlock, float duration, Action<Block> onHitBlock, Action onStopped)
     {
         _lerpMode = true;
@@ -96,7 +96,7 @@ public class Projectile : MonoBehaviour
     private void OnTriggerEnter(Collider other)
     {
         if (!_launched || _lerpMode) return;
-        Block block = other.GetComponent<Block>() ?? other.GetComponentInParent<Block>();
+        Block block = ColliderLookup.FindInSelfOrParents<Block>(other);
         if (block != null)
             _onHitBlock?.Invoke(block);
         StopAndReturnToPool();

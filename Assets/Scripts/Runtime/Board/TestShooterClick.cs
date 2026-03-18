@@ -2,8 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Test only: mouse click raycasts and "attacks" the block under the cursor, destroying it and triggering grid slide.
-/// Simulates shooter attack for testing. Block prefabs must have a Collider for raycast to hit.
+/// Quick debug helper: click a block to destroy it and trigger board slide.
+/// Handy when testing board behavior without shooter logic.
 /// </summary>
 public class TestShooterClick : MonoBehaviour
 {
@@ -13,6 +13,7 @@ public class TestShooterClick : MonoBehaviour
     private BlockGrid _grid;
     private bool _hasLastHitPoint;
     private Vector3 _lastHitPoint;
+    private readonly RaycastHit[] _raycastHits = new RaycastHit[24];
 
     private void Start()
     {
@@ -40,34 +41,37 @@ public class TestShooterClick : MonoBehaviour
         }
 
         Ray ray = _camera.ScreenPointToRay(Input.mousePosition);
-        RaycastHit[] hits = Physics.RaycastAll(ray, _rayDistance);
+        int hitCount = Physics.RaycastNonAlloc(ray, _raycastHits, _rayDistance);
 
-        if (hits.Length == 0)
+        if (hitCount <= 0)
         {
             return;
         }
 
         Block block = null;
-        RaycastHit hit = default;
-        for (int i = 0; i < hits.Length; i++)
+        float bestDistance = float.MaxValue;
+        Vector3 bestHitPoint = Vector3.zero;
+        for (int i = 0; i < hitCount; i++)
         {
-            hit = hits[i];
-            Block b = hit.collider.GetComponent<Block>() ?? hit.collider.GetComponentInParent<Block>();
-            if (b != null && b.IsInFrontAndBottomTier() && !b.IsMoving)
-            {
-                block = b;
-                break;
-            }
-        }
+            RaycastHit hit = _raycastHits[i];
+            Block candidate = ColliderLookup.FindInSelfOrParents<Block>(hit.collider);
+            if (candidate == null || !candidate.IsInFrontAndBottomTier() || candidate.IsMoving)
+                continue;
+            if (hit.distance >= bestDistance)
+                continue;
 
-        _lastHitPoint = hit.point;
-        _hasLastHitPoint = true;
+            bestDistance = hit.distance;
+            bestHitPoint = hit.point;
+            block = candidate;
+        }
 
         if (block == null)
         {
             return;
         }
 
+        _lastHitPoint = bestHitPoint;
+        _hasLastHitPoint = true;
         _grid.DestroyBlocksAndSlide(new List<Block> { block });
     }
 

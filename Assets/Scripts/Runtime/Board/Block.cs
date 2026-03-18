@@ -1,7 +1,7 @@
 using UnityEngine;
 
 /// <summary>
-/// A single block (cube) on the board. Has a color and grid position; can be part of a tier stack (tier level 0 = bottom, 1 = second cube, etc.). Y = tier level.
+/// One block on the board. It tracks its grid slot + tier, color data, and a little visual state.
 /// </summary>
 [RequireComponent(typeof(Renderer))]
 public class Block : MonoBehaviour
@@ -22,33 +22,34 @@ public class Block : MonoBehaviour
     [SerializeField] private Renderer _renderer;
     private Quaternion _baseRendererRotation;
     private bool _isMoving;
+    private MaterialPropertyBlock _materialPropertyBlock;
 
-    /// <summary>True while the block is lerping to a new position. Not attackable during this time.</summary>
+    /// <summary>True while this block is sliding around; we skip targeting during that time.</summary>
     public bool IsMoving => _isMoving;
 
-    /// <summary>Color data for matching (same asset = same color).</summary>
+    /// <summary>Color data used for matching (same asset means same color).</summary>
     public BlockColorData ColorData => _colorData;
 
-    /// <summary>Grid column (0 = leftmost).</summary>
+    /// <summary>Grid column index (0 is leftmost).</summary>
     public int Column => _column;
 
-    /// <summary>Grid row (0 = bottom line, Z=0).</summary>
+    /// <summary>Grid row index (0 is the front/bottom line, Z=0).</summary>
     public int Row => _row;
 
-    /// <summary>Tier level (0-based): 0 = bottom cube (y=0), 1 = second (y=1), etc.</summary>
+    /// <summary>Tier level in a stack (0 = bottom, 1 = one above, etc.).</summary>
     public int TierLevel => _tierLevel;
 
-    /// <summary>Grid width from the current level (LevelBlockSetup). 0 if no grid.</summary>
+    /// <summary>Current grid width, or 0 if we are not attached to a grid yet.</summary>
     public int GridWidth => _grid != null ? _grid.Width : 0;
 
-    /// <summary>Grid height from the current level (LevelBlockSetup). 0 if no grid.</summary>
+    /// <summary>Current grid height, or 0 if we are not attached to a grid yet.</summary>
     public int GridHeight => _grid != null ? _grid.Height : 0;
 
-    /// <summary>True if this block is on the front row (Z=0) and bottom tier. Only such blocks are attackable by the shooter.</summary>
+    /// <summary>Attackable means front row + bottom tier.</summary>
     public bool IsInFrontAndBottomTier() => _row == 0 && _tierLevel == 0;
     public bool IsSpecialTarget => _isSpecial;
 
-    /// <summary>Place this block at a grid cell and world position. Tier level 0 = y=0, 1 = y=1, etc.</summary>
+    /// <summary>Spawn/setup this block at a specific grid slot and world position.</summary>
     public void PlaceAt(BlockGrid grid, int column, int row, int tierLevel, Vector3 worldPosition, BlockColorData colorData)
     {
         _grid = grid;
@@ -59,11 +60,11 @@ public class Block : MonoBehaviour
         transform.position = worldPosition;
         transform.localScale = Vector3.one;
 
-        //special target
+        // Reset/toggle special visuals every time the block is (re)placed from pool.
         _isSpecial = _colorData != null && _colorData.IsSpecialTarget;
         _specialHitPoints = _isSpecial ? SpecialBlockMaxHitPoints : 0;
-        if (_isSpecial && _specialTargetEffects != null)
-            _specialTargetEffects.SetActive(true);
+        if (_specialTargetEffects != null)
+            _specialTargetEffects.SetActive(_isSpecial);
 
         if (colorData != null && _renderer != null)
         {
@@ -72,15 +73,17 @@ public class Block : MonoBehaviour
                 _renderer.sharedMaterial = colorData.BlockMaterial;
             }
 
-            MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
-            colorData.ApplyBlockColorTo(_propertyBlock);
-            _renderer.SetPropertyBlock(_propertyBlock);
+            if (_materialPropertyBlock == null)
+                _materialPropertyBlock = new MaterialPropertyBlock();
+            _materialPropertyBlock.Clear();
+            colorData.ApplyBlockColorTo(_materialPropertyBlock);
+            _renderer.SetPropertyBlock(_materialPropertyBlock);
 
             _baseRendererRotation = _renderer.transform.rotation;
         }
     }
 
-    /// <summary>Update grid position, tier level, and world position (e.g. after slide).</summary>
+    /// <summary>Update indices + world position after a move/slide.</summary>
     public void MoveTo(int column, int row, int tierLevel, Vector3 worldPosition)
     {
         _column = column;
@@ -89,7 +92,7 @@ public class Block : MonoBehaviour
         transform.position = worldPosition;
     }
 
-    /// <summary>Return this block to the pool. Call from grid or when clearing.</summary>
+    /// <summary>Send this block back to the pool.</summary>
     public void ReturnToPool()
     {
         ResetSpecialState();
@@ -97,8 +100,8 @@ public class Block : MonoBehaviour
     }
 
     /// <summary>
-    /// Applies one hit to this block and returns true when the block should be destroyed.
-    /// Special targets need multiple hits before they can be destroyed.
+    /// Apply one hit and tell the caller if this block should be destroyed now.
+    /// Special targets need multiple hits.
     /// </summary>
     public bool ApplyHitAndShouldDestroy()
     {
@@ -113,10 +116,11 @@ public class Block : MonoBehaviour
         _isSpecial = false;
         _specialHitPoints = 0;
         transform.localScale = Vector3.one;
-        _specialTargetEffects.SetActive(false);
+        if (_specialTargetEffects != null)
+            _specialTargetEffects.SetActive(false);
     }
 
-    /// <summary>Lerp scale down to 0.3 then return to pool. Call from grid when destroying. Bails if this block or grid is destroyed (e.g. exiting play mode).</summary>
+    /// <summary>Shrink this block down, then return it to the pool.</summary>
     public async Awaitable PlayShrinkThenReturnAsync(BlockGrid grid, float duration)
     {
         if (this == null || grid == null) return;
@@ -140,7 +144,7 @@ public class Block : MonoBehaviour
             grid.ReturnBlock(this);
     }
 
-    /// <summary>Lerp position to world position over duration, then update grid state. Bails if this block is destroyed (e.g. exiting play mode).</summary>
+    /// <summary>Smoothly move this block to a new world position.</summary>
     public async Awaitable MoveToAnimatedAsync(int column, int row, int tierLevel, Vector3 worldPosition, float duration)
     {
         if (this == null) return;
@@ -176,8 +180,7 @@ public class Block : MonoBehaviour
     }
 
     /// <summary>
-    /// Side-hit reaction for neighboring blocks: rotate toward an offset, then back to the start.
-    /// Does not change grid indices (column/row/tier) or world position.
+    /// Quick side-hit wobble: rotate out, then back. Purely visual.
     /// </summary>
     public async Awaitable PlaySideHitReactionAsync(Vector3 offset, float duration = 0.1f)
     {
@@ -187,8 +190,7 @@ public class Block : MonoBehaviour
 
         Transform target = _renderer.transform;
         Quaternion startRot = target.rotation;
-        // Cap total rotation by keeping the peak relative to the original base rotation,
-        // so repeated hits don't keep accumulating more and more twist.
+        // Keep the peak relative to the original base rotation so repeated hits don't over-twist it.
         Quaternion peakRot = Quaternion.Euler(_baseRendererRotation.eulerAngles + offset);
 
         float elapsed = 0f;
@@ -199,7 +201,7 @@ public class Block : MonoBehaviour
             elapsed += Time.deltaTime;
             float t = Mathf.Clamp01(elapsed / duration);
 
-            // Out-and-back over 0..1.
+            // Out-and-back curve over 0..1.
             float phase = t <= 0.5f ? t / 0.5f : (1f - t) / 0.5f;
             target.rotation = Quaternion.Slerp(startRot, peakRot, phase);
 
@@ -210,10 +212,7 @@ public class Block : MonoBehaviour
             target.rotation = startRot;
     }
 
-    /// <summary>
-    /// Permanently increases this block's visual scale by the given delta on all axes.
-    /// Used for special-target hit feedback.
-    /// </summary>
+    /// <summary>Small permanent scale bump used for special-target hit feedback.</summary>
     public void ApplyHitScale(float delta)
     {
         if (this == null || Mathf.Approximately(delta, 0f)) return;

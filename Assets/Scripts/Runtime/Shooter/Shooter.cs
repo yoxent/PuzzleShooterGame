@@ -3,8 +3,8 @@ using TMPro;
 using UnityEngine;
 
 /// <summary>
-/// Shooter that auto-fires at blocks of the same color. Spawns projectiles from a pool; all hits destroy the block.
-/// Has attack speed (fire rate) and a limited projectile count; when it runs out, goes offscreen then returns to ShooterPool.
+/// Auto-firing shooter that targets matching-color blocks.
+/// Uses pooled projectiles and returns to pool after ammo is gone.
 /// </summary>
 public class Shooter : MonoBehaviour
 {
@@ -59,9 +59,10 @@ public class Shooter : MonoBehaviour
     private Vector3 _offscreenStartPosition;
     private Vector3 _offscreenTargetPosition;
     private Quaternion _offscreenStartRotation;
-    // Reused to avoid allocating a new List on every single block hit.
+    // Reused so rapid hits don't keep allocating tiny one-item lists.
     private readonly List<Block> _singleBlockDestroyBuffer = new(1);
     private bool _isFiringSuspended;
+    private MaterialPropertyBlock _materialPropertyBlock;
     public bool IsMovingToPlatform { get; set; }
 
     /// <summary>Current number of projectiles remaining. When 0, shooter will go offscreen and be pooled.</summary>
@@ -96,7 +97,8 @@ public class Shooter : MonoBehaviour
     {
         if (!_isGoingOffscreen)
         {
-            _projectileSpawnPoint.gameObject.SetActive(true);
+            if (_projectileSpawnPoint != null)
+                _projectileSpawnPoint.gameObject.SetActive(true);
         }
     }
 
@@ -475,7 +477,8 @@ public class Shooter : MonoBehaviour
     {
         if (_isGoingOffscreen) return;
 
-        _projectileSpawnPoint.gameObject.SetActive(false);
+        if (_projectileSpawnPoint != null)
+            _projectileSpawnPoint.gameObject.SetActive(false);
         // Free the platform right away so the next shooter can be placed
         // while this one is still playing its offscreen animation.
         _shooterContainer?.VacatePlatformSlot(this);
@@ -530,32 +533,26 @@ public class Shooter : MonoBehaviour
     public void ApplyInactiveColor(BlockColorData colorData)
     {
         if (colorData == null) return;
-        if (_renderer != null)
-        {
-            if (colorData.InactiveShooterMaterial != null)
-            {
-                _renderer.sharedMaterial = colorData.InactiveShooterMaterial;
-            }
-
-            MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
-            colorData.ApplyInactiveShooterColor(_propertyBlock);
-            _renderer.SetPropertyBlock(_propertyBlock);
-        }
+        ApplyShooterVisual(colorData.InactiveShooterMaterial, colorData.ApplyInactiveShooterColor);
     }
 
     public void ApplyActiveColor(BlockColorData colorData)
     {
         if (colorData == null) return;
-        if (_renderer != null)
-        {
-            if (colorData.ActiveShooterMaterial != null)
-            {
-                _renderer.sharedMaterial = colorData.ActiveShooterMaterial;
-            }
+        ApplyShooterVisual(colorData.ActiveShooterMaterial, colorData.ApplyActiveShooterColor);
+    }
 
-            MaterialPropertyBlock _propertyBlock = new MaterialPropertyBlock();
-            colorData.ApplyActiveShooterColor(_propertyBlock);
-            _renderer.SetPropertyBlock(_propertyBlock);
-        }
+    private void ApplyShooterVisual(Material material, System.Action<MaterialPropertyBlock> applyColor)
+    {
+        if (_renderer == null) return;
+
+        if (material != null)
+            _renderer.sharedMaterial = material;
+
+        if (_materialPropertyBlock == null)
+            _materialPropertyBlock = new MaterialPropertyBlock();
+        _materialPropertyBlock.Clear();
+        applyColor?.Invoke(_materialPropertyBlock);
+        _renderer.SetPropertyBlock(_materialPropertyBlock);
     }
 }

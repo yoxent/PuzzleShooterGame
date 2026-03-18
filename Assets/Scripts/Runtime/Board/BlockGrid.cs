@@ -1,12 +1,9 @@
 using System.Collections.Generic;
-using System.Linq;
 using UnityEngine;
 
 /// <summary>
-/// Grid of blocks on the XZ plane. World position: X = -(width-1)/2 + column, Y = 0, Z = row.
-/// Uses a <see cref="BlockPool"/> to spawn/return blocks.
-/// When blocks are destroyed, slide order is Y first (cubes above slide down in same cell), then Z (blocks at back move to front).
-/// Subscribes to LevelManager.LevelLoaded (carries LevelBlockSetup) and applies the level; LevelManager triggers the load first.
+/// Runtime board grid on the XZ plane.
+/// Handles spawn, destroy, and slide logic (first Y compact inside a cell, then Z compact by column).
 /// </summary>
 public class BlockGrid : MonoBehaviour
 {
@@ -102,11 +99,24 @@ public class BlockGrid : MonoBehaviour
         return column >= 0 && column < _width && row >= 0 && row < _height;
     }
 
-    /// <summary>Returns blocks on the front row (Z=0), bottom tier, not moving, not already targeted by a projectile, that match the given color. Used by shooters to auto-target.</summary>
+    /// <summary>Get attackable blocks for a color (front row, bottom tier, idle, and not reserved).</summary>
     public IReadOnlyList<Block> GetAttackableBlocksMatching(BlockColorData color)
     {
-        if (color == null) return new List<Block>();
-        return _activeBlocks.Where(b => b != null && b.IsInFrontAndBottomTier() && !b.IsMoving && !_targetedByProjectile.Contains(b) && b.ColorData == color).ToList();
+        var result = new List<Block>();
+        if (color == null) return result;
+
+        for (int i = 0; i < _activeBlocks.Count; i++)
+        {
+            Block block = _activeBlocks[i];
+            if (block == null) continue;
+            if (!block.IsInFrontAndBottomTier()) continue;
+            if (block.IsMoving) continue;
+            if (_targetedByProjectile.Contains(block)) continue;
+            if (block.ColorData != color) continue;
+            result.Add(block);
+        }
+
+        return result;
     }
 
     /// <summary>
@@ -125,16 +135,21 @@ public class BlockGrid : MonoBehaviour
         return null;
     }
 
-    /// <summary>Distinct colors of blocks that are currently attackable (front row, bottom tier, not moving). Used by GameSession to decide if the level is unwinnable (no shooter with ammo can match one of these colors).</summary>
+    /// <summary>Distinct colors that are currently attackable on the front row.</summary>
     public IReadOnlyList<BlockColorData> GetAttackableBlockColors()
     {
-        var colors = new HashSet<BlockColorData>();
-        foreach (Block b in _activeBlocks)
+        var result = new List<BlockColorData>();
+        var seen = new HashSet<BlockColorData>();
+        for (int i = 0; i < _activeBlocks.Count; i++)
         {
+            Block b = _activeBlocks[i];
             if (b == null || !b.IsInFrontAndBottomTier() || b.IsMoving) continue;
-            if (b.ColorData != null) colors.Add(b.ColorData);
+            BlockColorData color = b.ColorData;
+            if (color == null) continue;
+            if (seen.Add(color))
+                result.Add(color);
         }
-        return new List<BlockColorData>(colors);
+        return result;
     }
 
     /// <summary>Reserve a block so only one projectile can target it. Returns true if reserved, false if already reserved by another projectile.</summary>
@@ -154,8 +169,21 @@ public class BlockGrid : MonoBehaviour
     /// <summary>True if any block is currently reserved by a projectile in flight. GameSession uses this to avoid declaring failure while hits are pending.</summary>
     public bool HasProjectilesInFlight => _targetedByProjectile.Count > 0;
 
-    /// <summary>True if any block is currently moving (slide animation). GameSession uses this to avoid declaring failure before slide completes and front row is settled.</summary>
-    public bool HasBlocksMoving => _activeBlocks.Any(b => b != null && b.IsMoving);
+    /// <summary>True when at least one block is mid-slide animation.</summary>
+    public bool HasBlocksMoving
+    {
+        get
+        {
+            for (int i = 0; i < _activeBlocks.Count; i++)
+            {
+                Block block = _activeBlocks[i];
+                if (block != null && block.IsMoving)
+                    return true;
+            }
+
+            return false;
+        }
+    }
 
     /// <summary>
     /// True while the board is resolving a destroy/slide cycle (including shrink, return-to-pool, and slide).
@@ -310,10 +338,7 @@ public class BlockGrid : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Trigger side-hit reactions on immediate left/right neighbors in the same row
-    /// when a block is hit by a projectile. Purely visual; does not affect grid state.
-    /// </summary>
+    /// <summary>Play a side-hit wobble on left/right neighbors in the same row.</summary>
     public void PlayNeighborHitReactions(Block center)
     {
         if (center == null) return;
@@ -322,7 +347,7 @@ public class BlockGrid : MonoBehaviour
         int leftCol = center.Column - 1;
         int rightCol = center.Column + 1;
 
-        Block leftNeighbor = _activeBlocks.FirstOrDefault(nb => nb != null && nb.Column == leftCol && nb.Row == row);
+        Block leftNeighbor = FindLowestTierBlock(leftCol, row);
         if (leftNeighbor != null)
         {
             float jitterX = Random.Range(-4f, 4f);
@@ -331,7 +356,7 @@ public class BlockGrid : MonoBehaviour
             _ = leftNeighbor.PlaySideHitReactionAsync(offset);
         }
 
-        Block rightNeighbor = _activeBlocks.FirstOrDefault(nb => nb != null && nb.Column == rightCol && nb.Row == row);
+        Block rightNeighbor = FindLowestTierBlock(rightCol, row);
         if (rightNeighbor != null)
         {
             float jitterX = Random.Range(-4f, 4f);
@@ -341,9 +366,7 @@ public class BlockGrid : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Plays hit reactions on the center block (scale-up) and its neighbors.
-    /// </summary>
+    /// <summary>Play center hit feedback + neighbor wobble.</summary>
     public void PlayHitReactions(Block center)
     {
         if (center == null) return;
@@ -352,7 +375,7 @@ public class BlockGrid : MonoBehaviour
         PlayNeighborHitReactions(center);
     }
 
-    /// <summary>Y first: in each affected cell, blocks above the destroyed one slide down (tier level and y decrease by 1).</summary>
+    /// <summary>First pass: compact each affected cell by tier (Y).</summary>
     private async Awaitable ApplyYSlideAsync(HashSet<(int c, int r)> affectedCells)
     {
         if (this == null) return;
@@ -360,7 +383,7 @@ public class BlockGrid : MonoBehaviour
         foreach ((int c, int r) in affectedCells)
         {
             if (this == null) return;
-            List<Block> inCell = _activeBlocks.Where(b => b.Column == c && b.Row == r).OrderBy(b => b.TierLevel).ToList();
+            List<Block> inCell = CollectBlocksInCellSortedByTier(c, r);
             for (int i = 0; i < inCell.Count; i++)
             {
                 Block b = inCell[i];
@@ -377,7 +400,7 @@ public class BlockGrid : MonoBehaviour
         }
     }
 
-    /// <summary>Z then: in each affected column, compact rows so blocks at the back (higher row) move to the front (lower row) to fill gaps.</summary>
+    /// <summary>Second pass: compact affected columns by row (Z), pulling back blocks toward the front.</summary>
     private async Awaitable ApplyZSlideAsync(HashSet<int> affectedColumns)
     {
         if (this == null) return;
@@ -385,13 +408,18 @@ public class BlockGrid : MonoBehaviour
         foreach (int c in affectedColumns)
         {
             if (this == null) return;
-            var byRow = _activeBlocks.Where(b => b.Column == c).GroupBy(b => b.Row).OrderBy(g => g.Key).ToList();
+            var byRow = CollectBlocksByRowForColumn(c);
+            var rows = new List<int>(byRow.Keys);
+            rows.Sort();
             int newRow = 0;
-            foreach (var group in byRow)
+            for (int rowIdx = 0; rowIdx < rows.Count; rowIdx++)
             {
+                int sourceRow = rows[rowIdx];
+                List<Block> group = byRow[sourceRow];
                 int targetRow = newRow++;
-                foreach (Block b in group)
+                for (int i = 0; i < group.Count; i++)
                 {
+                    Block b = group[i];
                     if (b.Row == targetRow) continue;
                     Vector3 pos = GetWorldPosition(c, targetRow, b.TierLevel);
                     awaitables.Add(b.MoveToAnimatedAsync(c, targetRow, b.TierLevel, pos, _moveDuration));
@@ -403,5 +431,57 @@ public class BlockGrid : MonoBehaviour
             await a;
             if (this == null) return;
         }
+    }
+
+    private Block FindLowestTierBlock(int column, int row)
+    {
+        Block found = null;
+        int bestTier = int.MaxValue;
+        for (int i = 0; i < _activeBlocks.Count; i++)
+        {
+            Block candidate = _activeBlocks[i];
+            if (candidate == null) continue;
+            if (candidate.Column != column || candidate.Row != row) continue;
+            if (candidate.TierLevel >= bestTier) continue;
+            found = candidate;
+            bestTier = candidate.TierLevel;
+        }
+
+        return found;
+    }
+
+    private List<Block> CollectBlocksInCellSortedByTier(int column, int row)
+    {
+        var inCell = new List<Block>();
+        for (int i = 0; i < _activeBlocks.Count; i++)
+        {
+            Block block = _activeBlocks[i];
+            if (block == null) continue;
+            if (block.Column == column && block.Row == row)
+                inCell.Add(block);
+        }
+
+        inCell.Sort((a, b) => a.TierLevel.CompareTo(b.TierLevel));
+        return inCell;
+    }
+
+    private Dictionary<int, List<Block>> CollectBlocksByRowForColumn(int column)
+    {
+        var byRow = new Dictionary<int, List<Block>>();
+        for (int i = 0; i < _activeBlocks.Count; i++)
+        {
+            Block block = _activeBlocks[i];
+            if (block == null || block.Column != column) continue;
+
+            if (!byRow.TryGetValue(block.Row, out List<Block> rowList))
+            {
+                rowList = new List<Block>();
+                byRow[block.Row] = rowList;
+            }
+
+            rowList.Add(block);
+        }
+
+        return byRow;
     }
 }

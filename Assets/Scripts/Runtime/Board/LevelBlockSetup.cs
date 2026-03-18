@@ -2,10 +2,8 @@ using System.Collections.Generic;
 using UnityEngine;
 
 /// <summary>
-/// Defines the block layout for one level. Grid is stored as a flat array: index = column + row * width.
-/// Null color = empty cell. Rows 0–9 (Z 0–9) are the visible 10×10; rows 10+ (Z 10+) are "at the back".
-/// Tier N = N cubes stacked at y=0, y=1, ..., y=N-1 (tier 1 = one cube at y=0).
-/// Minimum 120 blocks (cubes) per level.
+/// Authoring data for one level's block grid.
+/// Cells are stored flat (`index = column + row * width`), with optional color + tier per cell.
 /// </summary>
 [CreateAssetMenu(menuName = "Demo/Level Block Setup", fileName = "LevelBlockSetup")]
 public class LevelBlockSetup : ScriptableObject
@@ -99,80 +97,73 @@ public class LevelBlockSetup : ScriptableObject
         }
     }
 
-    /// <summary>Color at (column, row), or null if empty or out of bounds.</summary>
+    /// <summary>Color at a cell, or null if out of range/empty.</summary>
     public BlockColorData GetColorAt(int column, int row)
     {
-        if (column < 0 || column >= _width || row < 0 || row >= _height)
-            return null;
-        int index = column + row * _width;
-        if (_cells == null || index >= _cells.Length)
-            return null;
-        return _cells[index].Color;
+        return TryGetCell(column, row, out LevelCell cell) ? cell.Color : null;
     }
 
-    /// <summary>Tier at (column, row): number of cubes stacked (1 = one at y=0, 2 = two at y=0 and y=1). Returns 1 if out of bounds or not set.</summary>
+    /// <summary>Tier at a cell (1 by default when missing/out of bounds).</summary>
     public int GetTierAt(int column, int row)
     {
-        if (column < 0 || column >= _width || row < 0 || row >= _height)
-            return 1;
-        int index = column + row * _width;
-        if (_cells == null || index >= _cells.Length)
-            return 1;
-        return _cells[index].Tier;
+        return TryGetCell(column, row, out LevelCell cell) ? cell.Tier : 1;
     }
 
     /// <summary>Expected array length for current width/height.</summary>
     public int ExpectedLength => _width * _height;
 
-    /// <summary>Total number of cubes (blocks) in this level. Grid size × tier per cell, summed over non-empty cells.</summary>
+    /// <summary>Total number of cubes in this level (sum of tiers for all non-empty cells).</summary>
     public int GetBlockCount()
     {
         if (_cells == null) return 0;
+
         int count = 0;
-        for (int r = 0; r < _height; r++)
+        int limit = Mathf.Min(_cells.Length, ExpectedLength);
+        for (int i = 0; i < limit; i++)
         {
-            for (int c = 0; c < _width; c++)
-            {
-                if (GetColorAt(c, r) != null)
-                    count += GetTierAt(c, r);
-            }
+            LevelCell cell = _cells[i];
+            if (cell.Color == null) continue;
+            count += cell.Tier;
         }
+
         return count;
     }
 
-    /// <summary>Number of blocks (cubes) of the given color in this level. Sum of tier for all cells with that color.</summary>
+    /// <summary>Count cubes for one color (again summing by tier).</summary>
     public int GetBlockCountForColor(BlockColorData color)
     {
         if (color == null || _cells == null) return 0;
+
         int count = 0;
-        for (int r = 0; r < _height; r++)
+        int limit = Mathf.Min(_cells.Length, ExpectedLength);
+        for (int i = 0; i < limit; i++)
         {
-            for (int c = 0; c < _width; c++)
-            {
-                if (GetColorAt(c, r) == color)
-                    count += GetTierAt(c, r);
-            }
+            LevelCell cell = _cells[i];
+            if (cell.Color == color)
+                count += cell.Tier;
         }
+
         return count;
     }
 
-    /// <summary>Distinct colors used in this level (cells with non-null color). Order is not guaranteed.</summary>
+    /// <summary>Distinct colors used in non-empty cells.</summary>
     public List<BlockColorData> GetColorsUsed()
     {
         var set = new HashSet<BlockColorData>();
         if (_cells == null) return new List<BlockColorData>();
-        for (int r = 0; r < _height; r++)
+
+        int limit = Mathf.Min(_cells.Length, ExpectedLength);
+        for (int i = 0; i < limit; i++)
         {
-            for (int c = 0; c < _width; c++)
-            {
-                BlockColorData color = GetColorAt(c, r);
-                if (color != null) set.Add(color);
-            }
+            BlockColorData color = _cells[i].Color;
+            if (color != null)
+                set.Add(color);
         }
+
         return new List<BlockColorData>(set);
     }
 
-    /// <summary>Colors to use for shooters in this level. Uses explicit ShooterColors when set; otherwise infers from block colors used in the grid.</summary>
+    /// <summary>Use explicit shooter colors if provided; otherwise infer them from blocks in the grid.</summary>
     public List<BlockColorData> GetShooterColorsOrInferred()
     {
         var explicitColors = ShooterColors;
@@ -182,11 +173,27 @@ public class LevelBlockSetup : ScriptableObject
         return GetColorsUsed();
     }
 
-    /// <summary>True if _cells has the correct length for current width and height.</summary>
+    /// <summary>True if cell array length matches width * height.</summary>
     public bool IsValid => _cells != null && _cells.Length == ExpectedLength;
 
-    /// <summary>True if block count meets the minimum (120).</summary>
+    /// <summary>True when this level meets the minimum block count.</summary>
     public bool MeetsMinBlockCount => GetBlockCount() >= MinBlocksPerLevel;
+
+    private bool TryGetCell(int column, int row, out LevelCell cell)
+    {
+        cell = LevelCell.Empty;
+        if (column < 0 || column >= _width || row < 0 || row >= _height)
+            return false;
+        if (_cells == null)
+            return false;
+
+        int index = column + row * _width;
+        if (index < 0 || index >= _cells.Length)
+            return false;
+
+        cell = _cells[index];
+        return true;
+    }
 
 #if UNITY_EDITOR
     private void OnValidate()
