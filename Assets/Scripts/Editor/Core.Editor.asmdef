@@ -1,0 +1,19 @@
+{
+    "name": "Core.Editor",
+    "rootNamespace": "",
+    "references": [
+        "Core",
+        "Gameplay"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": true,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

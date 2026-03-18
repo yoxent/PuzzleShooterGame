@@ -1,0 +1,20 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 98b689e18b352bf49ad09dbfa69e5c62, type: 3}
+  m_Name: Cyan_BlockColorData
+  m_EditorClassIdentifier: 
+  _blockColor: {r: 0.25, g: 0.98324835, b: 1, a: 1}
+  _activeShootersColor: {r: 0.2509804, g: 0.9843137, b: 1, a: 1}
+  _inactiveShootersColor: {r: 0.495283, g: 0.9894301, b: 1, a: 1}
+  _blockMaterial: {fileID: 2100000, guid: 360f9d71b7de0214ab50d3d8430db61c, type: 2}
+  _inactiveShooterMaterial: {fileID: 2100000, guid: 360f9d71b7de0214ab50d3d8430db61c, type: 2}
+  _activeShooterMaterial: {fileID: 2100000, guid: 3eb282e96a868584b9af928b93afeb5b, type: 2}

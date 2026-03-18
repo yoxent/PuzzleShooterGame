@@ -1,0 +1,51 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 2973d58e7749a0c49b54172b82ecc07a, type: 3}
+  m_Name: UnlockablesCatalog
+  m_EditorClassIdentifier: 
+  _entries:
+  - LevelUnlockFeatureStart: 1
+    LevelUnlockFeatureEnd: 4
+    LevelFeatureShowcase: 5
+    UnlockableImage: {fileID: 21300000, guid: c0012ee6a4408a64ba1080261cce2fc7, type: 3}
+    FlavorText: Some levels now rise higher!
+    OverlaySettings:
+      SpriteOverlay: {fileID: 21300000, guid: 2b3df6ecb355218498e8b76d342d7a4d, type: 3}
+      HighlightScale: {x: 1.29, y: 11.92}
+      HighlightOffset: {x: 0, y: -0.42}
+  - LevelUnlockFeatureStart: 5
+    LevelUnlockFeatureEnd: 7
+    LevelFeatureShowcase: 11
+    UnlockableImage: {fileID: 21300000, guid: ba6111cf103ed234db2a0d542e487cda, type: 3}
+    FlavorText: '- Shoot it with any shooter\n- No ammo is consumed'
+    OverlaySettings:
+      SpriteOverlay: {fileID: 21300000, guid: 2b3df6ecb355218498e8b76d342d7a4d, type: 3}
+      HighlightScale: {x: 0, y: 0}
+      HighlightOffset: {x: 0, y: 0}
+  - LevelUnlockFeatureStart: 8
+    LevelUnlockFeatureEnd: 15
+    LevelFeatureShowcase: -1
+    UnlockableImage: {fileID: 21300000, guid: 421a5bbc0d310314b9dbceaad01cc871, type: 3}
+    FlavorText: 0
+    OverlaySettings:
+      SpriteOverlay: {fileID: 21300000, guid: 2b3df6ecb355218498e8b76d342d7a4d, type: 3}
+      HighlightScale: {x: 0, y: 0}
+      HighlightOffset: {x: 0, y: 0}
+  - LevelUnlockFeatureStart: 16
+    LevelUnlockFeatureEnd: 21
+    LevelFeatureShowcase: -1
+    UnlockableImage: {fileID: 21300000, guid: d6f33338e72f28745bf7351b6b2ad5b3, type: 3}
+    FlavorText: 0
+    OverlaySettings:
+      SpriteOverlay: {fileID: 21300000, guid: 2b3df6ecb355218498e8b76d342d7a4d, type: 3}
+      HighlightScale: {x: 0, y: 0}
+      HighlightOffset: {x: 0, y: 0}
